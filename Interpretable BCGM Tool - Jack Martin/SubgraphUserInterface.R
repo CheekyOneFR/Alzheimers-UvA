@@ -76,15 +76,6 @@ create_P_K_C = function(output_alg){
   rownames(K) = new_names
   colnames(C) = new_names
   rownames(C) = new_names
-  
-  # #reorder columns and rows
-  # order_vec=c(8,10,12,14,16,18,9,11,13,15,17,19,1,4,5,6,7,2,3)
-  # var_names = colnames(plinks)
-  # #matrix(c(var_names,order_vec),ncol=2) #check if new labels and ordering is correct
-  # print(matrix(c(var_names,order_vec),ncol=2))
-  # plinks = plinks[order_vec,order_vec]
-  # K = K[order_vec,order_vec]
-  # C = C[order_vec,order_vec]
 
   #save output
   return(list(plinks=plinks,K=K,C=C))
