@@ -1,0 +1,95 @@
+RID
+participant identifier
+
+diagnosis
+diagnosis code: 1-CN cognitively normal control participants, 2-EMCI patients with early mild cognitive impairment (=low threshold in screening memory tests), 3-LMCI late mild cognitive impairment (=normal threshold in screening memory tests), 4-AD dementia due to Alzheimer's disease, 5-SMC subjective cognitive decline (=still in normal range of cognitive tests, but report subjective feeling of worsened memory/cognive abilities)
+
+Sex
+1 female, 2 male
+
+Age
+participants' age at cognitive testing 
+
+EDUC
+years of education
+
+MMSE
+mini-mental status test for coginitve abilities and dementia
+
+MRI_Field_Strength
+1.5 or 3.0 Tesla
+
+site
+ADNI site code in US/Canada
+
+TIV
+total intracranial volume (often used as proxy of head size)
+
+FDG.pons
+FDG-PET tracer uptake in the pons reference region (used for intra-individual scaling)
+
+AV45.whole.cerebellum
+AV45-PET tracer uptake in the whole cerebellum reference region (used for intra-individual scaling)
+
+APOE4
+number of APOE4 allels, 0, 1 or 2
+
+SUMMARYSUVR_WHOLECEREBNORM
+standardized AV45 tracer uptake value ratio (=SUVR) for whole-brain
+
+SUMMARYSUVR_WHOLECEREBNORM_1.11CUTOFF
+binary amyloid 1-positive/0-negative scoring derived from AV45-PET
+
+Amy_Stage
+amyloid staging score 0-no amyloid to 4 full spread
+
+LDELTOTAL
+delayed recall memory test
+
+BNTSPONT
+Boston naming test
+
+BNTTOTAL
+Boston naming test
+
+TRAASCOR
+Trail-making executive function test A
+
+TRABSCOR
+Trail-making executive function test B
+
+TRAB-A
+Trail-making executive function test B minus A
+
+AVDEL30MIN
+delayed recall memory test
+
+AVDELTOT
+delayed recall memory test
+
+LIMMTOTAL
+immediate recall memory test
+
+CDR (CDGLOBAL) at scan
+clinical dementia rating - global score
+
+ADNI_MEM
+memory function composite score
+
+ADNI_EF
+executive function composite score
+
+T1_year
+year of baseline visit/MRI scan
+
+ABETA
+amyloid beta sampled from CSF (if available)
+
+TAU
+total tau sampled from CSF (if available)
+
+PTAU
+hyperphosphorylated tau sampled from CSF (if available)
+
+Abeta_pos
+amyloid beta 1-positive/0-negative status sampled from CSF (if available)
