@@ -86,7 +86,7 @@ PKC <- create_P_K_C(output_alg)
 
 ######################## Define Function
 
-create_subgraph <- function(From, To, Degree) {
+create_subgraph <- function(From, To, Degree, Method) {
   
   ## --- BDgraph output -------------------------------------------------------
   g_full <- BDgraph::select(output_alg$output, cut = NULL, vis = FALSE) |>
@@ -104,6 +104,10 @@ create_subgraph <- function(From, To, Degree) {
   edge_df <- as.data.frame(edge_pairs, stringsAsFactors = FALSE) |>
     setNames(c("from", "to")) |>
     dplyr::mutate(weight = mapply(function(f, t) PKC$C[f, t], from, to))
+
+  edge_df_plinks <- as.data.frame(edge_pairs, stringsAsFactors = FALSE) |>
+    setNames(c("from", "to")) |>
+    dplyr::mutate(weight = mapply(function(f, t) PKC$plinks[f, t], from, to))
   
   ## --- tidygraph object -----------------------------------------------------
   g_tbl <- tidygraph::as_tbl_graph(edge_df) |>
@@ -113,23 +117,50 @@ create_subgraph <- function(From, To, Degree) {
       abs_w = abs(weight)
     )
   
+  g_tbl_plinks <- tidygraph::as_tbl_graph(edge_df_plinks) |>
+    tidygraph::activate(edges) |>
+    dplyr::mutate(
+      sign  = ifelse(weight >= 0, "pos", "neg"),
+      abs_w = abs(weight)
+    )
+  
   
   ## --- plot -----------------------------------------------------------------
-  plot_output <- ggraph::ggraph(g_tbl, layout = "sugiyama") +
-    ggraph::geom_edge_link(
-      aes(width = abs_w, colour = sign),
-      lineend = "round"
-    ) +
-    ggraph::scale_edge_width(range = c(1, 4)) +
-    ggraph::scale_edge_colour_manual(values = c(pos = "steelblue", neg = "firebrick")) +
-    ggraph::geom_node_circle(aes(r = 0.15), fill = "lightsteelblue") +
-    ggraph::geom_node_text(aes(label = name), size = 3, vjust = 1.5) +
-    ggraph::theme_graph()
-  
+  if (Method == "Probability") {
+    plot_output <- ggraph::ggraph(g_tbl_plinks, layout = "grid") + # dh could work, gem also, grid pretty good
+      # randomly too, 
+      ggraph::geom_edge_link(
+        aes(width = abs_w, colour = sign),
+        lineend = "round"
+      ) +
+      ggraph::scale_edge_width(range = c(1.5, 4)) +
+      ggraph::geom_node_circle(aes(r = 0.15), fill = "lightsteelblue") +
+      ggraph::geom_node_text(aes(label = name), size = 5, vjust = 0) +
+      ggraph::theme_graph()
+  } else if (Method == "Correlation") {
+    plot_output <- ggraph::ggraph(g_tbl, layout = "grid") + # dh could work, gem also, grid pretty good
+      # randomly too, 
+      ggraph::geom_edge_link(
+        aes(width = abs_w, colour = sign),
+        lineend = "round"
+      ) +
+      ggraph::scale_edge_width(range = c(1.5, 4)) +
+      ggraph::scale_edge_colour_manual(values = c(pos = "steelblue", neg = "firebrick")) +
+      ggraph::geom_node_circle(aes(r = 0.15), fill = "lightsteelblue") +
+      ggraph::geom_node_text(aes(label = name), size = 5, vjust = 0) +
+      ggraph::theme_graph()
+  } else {}
   ## --- informative text -----------------------------------------------------
   directC <- PKC$C[From, To]
-  text_output <- sprintf("The partial correlation between %s and %s is %.3f",
-                         From, To, directC)
+  directP <- PKC$plinks[From, To]
+  totalC <- sum(edge_df$weight)
+  text_output <- ""
+  
+  for (edge in 1:nrow(edge_df)) {
+    text_output <- paste(text_output, sprintf("The partial correlation between **%s** and **%s** is %.3f, with certainty %.3f", edge_df[edge,][["from"]], edge_df[edge,][["to"]], edge_df[edge,][["weight"]], edge_df_plinks[edge,][["weight"]]))
+    text_output <- paste(text_output, "\n")
+  }
+  
   
   ## return whatever you need
   return(list(graph  = g_tbl,
@@ -142,12 +173,16 @@ ui <- fluidPage(
   useShinyjs(),
   useHeyshiny(language = 'en-US'),
   
+  #speechInput(inputId = "hey_command", command = "hey *msg"),
+  
   speechInput(inputId = "var1", command = "hey variable 1 *msg"),
   speechInput(inputId = "var1", command = "hey variable one *msg"),
   speechInput(inputId = "var2", command = "hey variable 2 *msg"),
   speechInput(inputId = "var2", command = "hey variable two *msg"),
   
   speechInput(inputId = "Degree", command = "hey degree *msg"),
+  
+  speechInput(inputId = "Method", command = "hey method *msg"),
   
   speechInput(inputId = "analyze", command = "hey analyze"),
   
@@ -162,7 +197,9 @@ ui <- fluidPage(
         selectInput("var1", 'Select Variable 1, or say "hey, variable one:"', choices = var_names),
         selectInput("var2", 'Select Variable 2, or say "hey, variable two:"', choices = var_names),
         selectInput("Degree", 'Select Degree: (or say "hey, degree:"', choices = c(1, 2, 3, 4, 5)),
+        selectInput("Method", "Partial Correlations or Edge Probability:", choices = c("Correlation", "Probability")),
         actionButton("goButton", "Analyze")
+        #verbatimTextOutput("shiny_response")
       ),
       actionButton("toggleSidebar", "Hide Inputs")
     ),
@@ -175,25 +212,76 @@ ui <- fluidPage(
   )
 )
 
+# Some variable names are title case and some are upper case
+
+# Specifically these names are title case and the rest are upper case
+
+# Upper case:
+# Age
+# Memory
+# Executive
+# Sex
+# Educ
+# Amy-stage
+
+# I also need to think of an edge case for Amy-stage because the title case of "amy-stage"
+# is "Amy-Stage"
 
 # Server
 server <- function(input, output) {
   
+  # Canonical names
+  new_names <- c(
+    "Age","Memory","Executive", "Sex","Educ","APOE4","Amy-stage",
+    "MMSE", "LDELTOTAL", "BNTSPONT", "BNTTOTAL", "TRAASCOR", "TRABSCOR", "TRAB-A",
+    "AVDEL30MIN", "AVDELTOT",
+    "G Thal","V Thal",
+    "G PCC","V PCC",
+    "G Prec","V Prec",
+    "G Hipp","V Hipp",
+    "G Caud","V Caud",
+    "G Put","V Put"
+  )
+  
+  # Normalize to lowercase with stripped whitespace
+  normalize_input <- function(x) {
+    tolower(trimws(x))
+  }
+  
+  # Build canonical lookup table
+  canonical_map <- setNames(new_names, normalize_input(new_names))
+  
+  # Canonicalize an input string
+  canonicalize <- function(input_string) {
+    normalized <- normalize_input(input_string)
+    if (normalized %in% names(canonical_map)) {
+      return(canonical_map[[normalized]])
+    } else if (grepl("-", normalized)) {
+      # Fallback for hyphenated cases
+      parts <- unlist(strsplit(normalized, "-"))
+      return(paste(tools::toTitleCase(parts), collapse = "-"))
+    } else {
+      return(tools::toTitleCase(normalized))
+    }
+  }
+  
+  
+  
   observeEvent(input$goButton, {
     output$varPlot <- renderPlot({
-      create_subgraph(str_to_title(input$var1), str_to_title(input$var2), input$Degree)$plot
+      create_subgraph(canonicalize(input$var1), canonicalize(input$var2), input$Degree, str_to_title(input$Method))$plot
     })
     output$varText <- renderText({
-      create_subgraph(str_to_title(input$var1), str_to_title(input$var2), input$Degree)$text
+      toString(create_subgraph(canonicalize(input$var1), canonicalize(input$var2), input$Degree, str_to_title(input$Method))$text)
     })
   })
   
   observeEvent(input$analyze, {
     output$varPlot <- renderPlot({
-      create_subgraph(str_to_title(input$var1), str_to_title(input$var2), input$Degree)$plot
+      create_subgraph(canonicalize(input$var1), canonicalize(input$var2), input$Degree, str_to_title(input$Method))$plot
     })
     output$varText <- renderText({
-      create_subgraph(str_to_title(input$var1), str_to_title(input$var2), input$Degree)$text
+      create_subgraph(canonicalize(input$var1), canonicalize(input$var2), input$Degree, str_to_title(input$Method))$text
     })
   })
   
@@ -208,6 +296,10 @@ server <- function(input, output) {
       updateActionButton(inputId = "toggleSidebar", label = "Hide Inputs")
     }
   })
+  
+  # observeEvent(input$hey_command, {
+  #   output$shiny_response <- renderText(message(input$hey_command))
+  # })
 }
 
 # Run the app
