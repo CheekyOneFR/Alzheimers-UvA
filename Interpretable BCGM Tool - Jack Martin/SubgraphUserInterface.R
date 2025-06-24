@@ -168,6 +168,24 @@ create_subgraph <- function(From, To, Degree, Method) {
        text = text_output))
 }
 
+# library(gridExtra)
+# 
+# plots <- list()
+# 
+# #Error "BNTTOTAL"
+# cognitive_scores = c("MMSE", "LDELTOTAL", "BNTSPONT", "TRAB-A", "AVDEL30MIN", "AVDELTOT")
+# 
+# for (to in cognitive_scores) {
+#   p <- try(create_subgraph("Sex", to, 2, "Probability")$plot, silent = TRUE)
+#   if (!inherits(p, "try-error")) {
+#     plots[[length(plots) + 1]] <- p
+#   }
+# }
+# 
+# # Show the plots in a 2x5 grid
+# do.call(grid.arrange, c(plots[1:6], nrow = 3, ncol = 2))
+
+
 
 ui <- fluidPage(
   useShinyjs(),
