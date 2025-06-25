@@ -1,0 +1,289 @@
+---
+title: "glasso"
+output: pdf_document
+date: "2025-05-22"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+install.packages("Hmisc", type = "binary")
+
+library(dplyr)
+library(tidyverse)
+library(readxl)
+library(janitor)
+library(huge)
+library(igraph)
+library(qgraph)
+library(Hmisc)
+library(ggplot2)
+library(reshape2)
+library(gridExtra)
+
+df <- read_excel("2020_master_data_merged.xlsx")
+
+df <- df %>% clean_names()
+
+# Define the variables you want to use
+vars_used <- c(
+  "gm_l_hippocampus", "gm_r_hippocampus", "gm_precuneus_cortex_l", "gm_precuneus_cortex_r",
+  "gm_cingulate_gyrus_posterior_l", "gm_cingulate_gyrus_posterior_r",
+  "fd_gpvc_l_hippocampus", "fd_gpvc_r_hippocampus", "fd_gpvc_precuneus_cortex_l", "fd_gpvc_precuneus_cortex_r",
+  "fd_gpvc_l_caudate", "fd_gpvc_r_caudate",
+  "amy_stage", "apoe4",
+  "adni_mem", "adni_ef",
+  "age", "sex"
+)
+
+
+df_cleaned <- df %>%
+  mutate(across(where(is.character), ~ na_if(., "NA")))
+
+df_cleaned <- df_cleaned %>%
+  mutate(
+    adni_mem = na_if(adni_mem, "-"),
+    adni_ef = na_if(adni_ef, "-"),
+    adni_mem = as.numeric(adni_mem),
+    adni_ef = as.numeric(adni_ef),
+    apoe4 = as.numeric(apoe4),
+    amy_stage = as.numeric(amy_stage)
+  )
+
+# Merge left/right hippocampus gray matter volume
+df_cleaned$gm_hippocampus_merge <- rowMeans(df_cleaned[, c("gm_l_hippocampus", "gm_r_hippocampus")], na.rm = TRUE)
+
+# Precuneus cortex
+df_cleaned$gm_precuneus_merge <- rowMeans(df_cleaned[, c("gm_precuneus_cortex_l", "gm_precuneus_cortex_r")], na.rm = TRUE)
+
+# Cingulate gyrus posterior
+df_cleaned$gm_cingulate_merge <- rowMeans(df_cleaned[, c("gm_cingulate_gyrus_posterior_l", "gm_cingulate_gyrus_posterior_r")], na.rm = TRUE)
+
+
+# Merge left/right hippocampus glucose metabolism (FDG-PET)
+df_cleaned$fd_gpvc_hippocampus_merge <- rowMeans(df_cleaned[, c("fd_gpvc_l_hippocampus", "fd_gpvc_r_hippocampus")], na.rm = TRUE)
+
+# Precuneus cortex
+df_cleaned$fd_gpvc_precuneus_merge <- rowMeans(df_cleaned[, c("fd_gpvc_precuneus_cortex_l", "fd_gpvc_precuneus_cortex_r")], na.rm = TRUE)
+
+# Caudate
+df_cleaned$fd_gpvc_caudate_merge <- rowMeans(df_cleaned[, c("fd_gpvc_l_caudate", "fd_gpvc_r_caudate")], na.rm = TRUE)
+
+vars_used <- c(
+  "gm_hippocampus_merge", "gm_precuneus_merge", "gm_cingulate_merge",
+  "fd_gpvc_hippocampus_merge", "fd_gpvc_precuneus_merge", "fd_gpvc_caudate_merge",
+  "amy_stage", "apoe4", "adni_mem", "adni_ef", "age", "sex"
+)
+
+  
+# Subset and drop rows with missing values only in the selected variables
+df_glasso <- df_cleaned %>%
+  select(all_of(vars_used)) %>%
+  drop_na()
+  
+# Calculate the Pearson correlation matrix
+df_glasso_numeric <- df_glasso %>%
+  select(where(is.numeric))  # Select only numeric columns
+cor_matrix <- cor(df_glasso_numeric, use = "complete.obs")
+
+
+# p-values
+# Create an empty matrix to store p-values
+n <- ncol(df_glasso_numeric)  # Number of variables
+pvalues <- matrix(NA, nrow = n, ncol = n)
+
+# Loop over each pair of variables to perform correlation tests
+for (i in 1:(n - 1)) {
+  for (j in (i + 1):n) {
+    # Perform correlation test between variable i and variable j
+    test_result <- cor.test(df_glasso_numeric[[i]], df_glasso_numeric[[j]])
+    
+    # Store the p-value in the pvalues matrix
+    pvalues[i, j] <- test_result$p.value
+    pvalues[j, i] <- test_result$p.value  # Since the matrix is symmetric
+  }
+}
+
+# Set row and column names for the p-values matrix
+rownames(pvalues) <- colnames(df_glasso_numeric)
+colnames(pvalues) <- colnames(df_glasso_numeric)
+
+# View the p-values matrix
+pvalues
+
+# Set correlations to zero where p-values exceed 0.05
+cor_matrix[pvalues > 0.05] <- 0
+
+# 1. Standardize your data and apply nonparanormal transformation
+X_npn <- huge.npn(df_glasso, npn.func = "truncation")
+
+# 2. Fit a graphical lasso model path (multiple values of lambda)
+glasso_model <- huge(X_npn, method = "glasso", nlambda = 200, lambda.min.ratio = 0.001, cov.output = TRUE)
+
+# 3. Select the best network using parameter tuning method 1 (RIC)
+glasso_select <- huge.select(glasso_model, criterion = "ric")
+
+glasso_select$opt.lambda
+
+# 4. Extract the precision matrix and compute adjacency info
+theta_selected <- glasso_model$icov[[opt_idx]]  # inverse covariance matrix
+
+# Create binary adjacency matrix from upper triangle (excluding diagonal)
+adj_binary <- (theta_selected != 0) * 1
+diag(adj_binary) <- 0  # remove self-loops
+num_edges <- sum(adj_binary[upper.tri(adj_binary)])
+cat("Number of edges:", num_edges, "\n")
+
+# Calculate sparsity (proportion of non-zero off-diagonal elements)
+off_diag <- theta_selected[upper.tri(theta_selected)]
+sparsity <- sum(off_diag != 0) / length(off_diag)
+cat("Sparsity (non-zero proportion of off-diagonal elements):", sparsity, "\n")
+
+# 5. Get the inverse covariance matrix (precision matrix) from Glasso
+# p_ij = -theta_ij / sqrt(theta_ii * theta_jj)
+precision <- glasso_model$icov[[opt_idx]]
+D <- diag(1 / sqrt(diag(precision))) 
+partial_corr <- -D %*% precision %*% D 
+diag(partial_corr) <- 0  # remove self-loops
+
+precision
+
+# 6. Assign variable names 
+colnames(partial_corr) <- colnames(df_glasso)
+rownames(partial_corr) <- colnames(df_glasso)
+
+sum(abs(partial_corr) > 1e-5)
+sum(precision[upper.tri(precision)] != 0)
+
+# 7. Create a color matrix for the correlations
+color_matrix_corr <- matrix(NA, nrow = nrow(cor_matrix), ncol = ncol(cor_matrix))
+color_matrix_corr[cor_matrix > 0] <- "blue"
+color_matrix_corr[cor_matrix < 0] <- "red"
+
+# 8. Create a color matrix matching partial_corr
+color_matrix <- matrix(NA, nrow = nrow(partial_corr), ncol = ncol(partial_corr))
+color_matrix[partial_corr > 0] <- "blue"
+color_matrix[partial_corr < 0] <- "red"
+
+# 10. Melt both correlation matrices for ggplot2
+cor_matrix_melted <- melt(cor_matrix)
+partial_corr_melted <- melt(partial_corr)
+
+# 11. Create ggplot objects for both matrices
+plot_pearson <- ggplot(cor_matrix_melted, aes(Var1, Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "red", high = "blue", mid = "white", midpoint = 0, limit = c(-1, 1)) +
+  theme_minimal() +
+  labs(title = "Pearson Correlation Matrix", x = "", y = "") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(axis.text.y = element_text(angle = 0, hjust = 1))
+
+plot_partial <- ggplot(partial_corr_melted, aes(Var1, Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "red", high = "blue", mid = "white", midpoint = 0, limit = c(-1, 1)) +
+  theme_minimal() + coord_fixed()
+  labs(title = "Partial Correlation Matrix", x = "", y = "") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(axis.text.y = element_text(angle = 0, hjust = 1))
+
+# Arrange both plots side by side
+grid.arrange(plot_pearson, plot_partial, ncol = 2)
+
+# 12. Define groups
+groups <- list(
+  GM = c("gm_hippocampus_merge", "gm_precuneus_merge", "gm_cingulate_merge"),
+  FDG = c("fd_gpvc_hippocampus_merge", "fd_gpvc_precuneus_merge", "fd_gpvc_caudate_merge"),
+  Cog = c("adni_mem", "adni_ef"),
+  Bio = c("amy_stage", "apoe4"),
+  Demo = c("age", "sex")
+)
+
+# 13. Map group labels to variable names
+group_vector <- rep(NA, length(colnames(partial_corr)))
+names(group_vector) <- colnames(partial_corr)
+for (g in names(groups)) group_vector[groups[[g]]] <- g
+
+group_colors <- c(
+  GM = "#66c2a5",       # soft green
+  FDG = "#fc8d62",      # coral
+  Cog = "#8da0cb",      # bluish
+  Bio = "#e78ac3",      # pink
+  Demo = "#a6d854"      # lime green
+)
+
+# Match group colors to variables
+node_colors <- group_colors[group_vector]
+
+
+# 14. qgraph
+pdf("glasso_grouped_custom_legend.pdf", width = 10, height = 10)
+
+partial_corr <- (partial_corr + t(partial_corr)) / 2
+
+# Plot without legend
+qgraph(partial_corr,
+       layout = "spring",
+       labels = colnames(partial_corr),
+       vsize = 6,
+       minimum = 0.001,
+       edge.color = color_matrix,
+       color = node_colors,
+       border.color = "black",
+       legend = FALSE,  # <- don't use automatic legend
+       directed = FALSE,
+       mar = c(4, 4, 4, 4)
+)
+
+# Add manual legend
+legend("topright",
+       legend = names(group_colors),
+       fill = unname(group_colors),
+       border = "black",
+       cex = 0.8)
+
+dev.off()
+
+
+system("open glasso_grouped_custom_legend.pdf")
+
+
+# Get the selected theta (precision) matrix
+theta_selected <- glasso_model$icov[[opt_idx]]
+
+# Ensure names are set
+colnames(theta_selected) <- colnames(df_glasso)
+rownames(theta_selected) <- colnames(df_glasso)
+
+
+# Binary adjacency matrix
+adj_binary <- (theta_selected != 0) * 1
+diag(adj_binary) <- 0
+
+# Extract edge indices (upper triangle only)
+edge_indices <- which(upper.tri(adj_binary) & adj_binary == 1, arr.ind = TRUE)
+
+# Create edge list if edges exist
+if (nrow(edge_indices) > 0) {
+  edges_df <- data.frame(
+    from = rownames(theta_selected)[edge_indices[, 1]],
+    to = colnames(theta_selected)[edge_indices[, 2]],
+    partial_correlation = partial_corr[edge_indices]
+  )
+  
+  # Sort
+  edges_df <- edges_df %>% arrange(desc(partial_correlation))  # Sort from most positive to most negative
+  
+  print(edges_df)
+} else {
+  cat("No edges found.\n")
+}
+
+
+
