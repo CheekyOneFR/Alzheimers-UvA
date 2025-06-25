@@ -4,7 +4,6 @@ library(shiny)
 library(shinyjs)
 library(heyshiny)
 library(BDgraph)
-library(xlsx)
 library(igraph)
 library(ggraph)
 library(tidygraph)     # gives tbl_graph, used by ggraph
