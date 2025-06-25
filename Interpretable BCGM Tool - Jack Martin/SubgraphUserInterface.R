@@ -9,7 +9,6 @@ library(ggraph)
 library(tidygraph)     # gives tbl_graph, used by ggraph
 library(stringr)
 
-setwd("C:/Users/johne/OneDrive - UvA/Documents/Professional/Bachelor Thesis/Code and Data")
 diagnosis_vec = c(1,2,3,4)
 diag_text = paste(diagnosis_vec,collapse=" ")
 filename = paste("CognitiveTests_Copula_output_diag_",diag_text,".Rdata",sep="")
